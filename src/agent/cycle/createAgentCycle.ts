@@ -1,62 +1,62 @@
-import type { AgentContext, AgentCycle, AgentCycleHook } from "../../types/cycle";
+import type { AgentContext } from "../../types/agent";
+import { agentCycleStages, type AgentCycleEvent, type AgentCycleHook, type AgentCycleManager, type AgentCycleStage } from "../../types/cycle";
 
-/**
- * Registry mapping each stage to an array of registered hook functions.
- */
-type AgentCycleRegistry<T extends AgentContext> = {
-  [K in keyof AgentCycle<T>]-?: AgentCycleHook<T>[];
+type AgentCycleRegistry<T extends AgentContext> = Record<AgentCycleStage, AgentCycleHook<T>[]>;
+
+const createRegistry = <T extends AgentContext>(): AgentCycleRegistry<T> => {
+  return agentCycleStages.reduce((registry, stage) => {
+    registry[stage] = [];
+    return registry;
+  }, {} as AgentCycleRegistry<T>);
 };
 
-/**
- * Factory function to create an agent life cycle manager instance.
- */
-export function createAgentCycle<T extends AgentContext = AgentContext>() {
-  // Initialize the hook registry with empty arrays for each lifecycle stage
-  const registry: AgentCycleRegistry<T> = {
-    onAgentStart: [],
-    onThoughtStart: [],
-    onToolStart: [],
-    onToolEnd: [],
-    onAgentEnd: [],
-    onAgentError: []
+export function createAgentCycle<T extends AgentContext = AgentContext>(): AgentCycleManager<T> {
+  const registry = createRegistry<T>();
+
+  const register = (...events: AgentCycleEvent<T>[]) => {
+    events.forEach((event) => {
+      const eventFunction = event();
+
+      agentCycleStages.forEach((stage) => {
+        const hook = eventFunction[stage];
+        if (typeof hook === "function") {
+          registry[stage].push(hook);
+        }
+      });
+    });
   };
 
-  /**
-   * Registers a lifecycle extension (bundle of hooks) to the cycle manager.
-   * Supports chaining for fluent configuration.
-   * @param extension An object containing optional lifecycle hook methods.
-   */
-  const register = (extension: AgentCycle<T>) => {
-    (Object.keys(registry) as Array<keyof AgentCycle<T>>).forEach((stage) => {
-      const hook = extension[stage];
-      if (typeof hook === 'function') {
-        registry[stage].push(hook);
-      }
-    });
-    return cycle; // Enables method chaining
-  }
+  const emit = async (stage: AgentCycleStage, context: T): Promise<T> => {
+    let currentContext = { ...context };
 
-  /**
-   * Dispatches and sequentially executes all registered hooks for a given lifecycle stage.
-   * Allows hooks to mutate and pass down the shared context pipeline.
-   * @param stage The target lifecycle stage to emit.
-   * @param initialContext The baseline context before entering this stage.
-   * @returns The updated context after running through the pipeline.
-   */
-  const emit = async (stage: keyof AgentCycle<T>, initialContext: T): Promise<T> => {
-    const stageHooks = registry[stage] || [];
-    let currentContext = { ...initialContext };
-
-    for (const hook of stageHooks) {
+    for (const hook of registry[stage]) {
       const updatedContext = await hook(currentContext);
       if (updatedContext) {
-        currentContext = { ...currentContext, ...updatedContext };
+        currentContext = structuredClone({ ...currentContext, ...updatedContext });
       }
     }
 
     return currentContext;
-  }
+  };
 
-  const cycle = { register, emit };
-  return cycle;
+  const run = async (context: T): Promise<T> => {
+    let currentContext = { ...context };
+ 
+    try {
+      currentContext = await emit("onAgentStart", currentContext);
+
+      
+    } catch (error) {
+      return emit("onAgentError", {
+        ...currentContext,
+        error,
+      } as T);
+    }
+  };
+
+  return {
+    register,
+    emit,
+    run,
+  };
 }
