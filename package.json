@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.48",
-    "ai": "^6.0.195",
+    "ai": "^7.0.0-canary.159",
     "ink": "^7.0.5",
     "ink-spinner": "^5.0.0",
     "react": "^19.2.7",

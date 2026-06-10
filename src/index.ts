@@ -1,31 +1,32 @@
-import { streamText, tool } from "ai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import z from "zod";
+import { createAgentCycle } from "./agent/cycle/createAgentCycle";
+import { handleTools } from "./agent/tools";
+import type { AgentContext } from "./types/agent.type";
 
-const apiKey = process.env.LLM_API_KEY;
+const cycle = createAgentCycle({
+  messages: [
+    { role: "user", content: "What files are in the current directory?" },
+  ],
+} as AgentContext);
 
-if (!apiKey) {
-  throw new Error("Missing LLM_API_KEY in .env");
-}
+cycle.register(handleTools, () => ({
+  onAgentStart: () => {
+    console.log("Agent started");
+  },
+  onThoughtStart: () => {
+    console.log("Thought started");
+  },
+  onThoughtEnd: () => {
+    console.log("Thought ended");
+  },
+  onToolStart: () => {
+    console.log("Tool started");
+  },
+  onToolEnd: () => {
+    console.log("Tool ended");
+  },
+  onAgentEnd: () => {
+    console.log("Agent ended");
+  },
+}));
 
-const provider = createOpenAICompatible({
-  name: 'deepseek',
-  apiKey,
-  baseURL: process.env.LLM_BASE_URL as string,
-});
-
-const result = await streamText({
-  model: provider.chatModel(process.env.LLM_MODEL ?? "deepseek-v4-flash-free"),
-  prompt: "请先思考北京明天的天气是否适合户外运动，然后调用 get_weather 工具查询北京天气。",
-  tools: {
-    get_weather: tool({
-      description: '获取指定位置的天气',
-      inputSchema: z.object({ location: z.string().describe('位置名称，例如：北京') }),
-      execute: async ({ location }) => ({ weather: '晴', temperature: '22°C', location }),
-    }),
-  }
-});
-
-for await (const chunk of result.fullStream) {
-  console.log(JSON.stringify(chunk));
-}
+await cycle.run();
